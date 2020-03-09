@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 #
-# 这个是getssl.sh的一个wrapper, 可同时接受一个或多个参数
+# 这个是getssl.sh的一个wrapper
 # EP:
-# 比如要查询192.168.x.x, 192.169.1.x, 192.170.1.x, 192.170.x.x
-# $ ./find 192.168 192.169.1 192.170.1 192.171
+# $ ./find 192.168.1.1/24
 #
 # Author: cloud@txthinking.com
 #
@@ -11,22 +10,53 @@
 if [ $# -eq 0 ]
 then
     echo -e "Usage:\n";
-    echo -e "    $ ./find.sh 192.168"
-    echo -e "    $ ./find.sh 192.168.1"
-    echo -e "    $ ./find.sh 192.168 192.169 192.170.1"
+    echo -e "    $ ./find.sh 192.168.1.1/24"
     echo -e "\nView find.sh file to see more.\n"
     exit 0;
 fi
 
-for n
+if [ ! -d output ]
+then
+    mkdir output
+fi
+
+first=$(./iprange-$(uname)-$(uname -m) $1 | awk '{print $1}')
+last=$(./iprange-$(uname)-$(uname -m) $1 | awk '{print $2}')
+output=output/$first-$last
+> $output
+
+max_process=99
+if [ $(uname) = "Darwin" ]
+then
+    max_process=33
+fi
+fd=/tmp/google-hosts.fd
+mkfifo $fd
+exec 9<>$fd
+rm $fd
+for((i=0;i<$max_process;i++))
 do
-    if [ -n "$(echo $n | cut -d . -f 3)" ]
+    echo
+done >&9
+
+n=0
+for((i=$first;i<$last;i++))
+do
+    {
+        read -u9
+        {
+            ip=$(./d2ip-$(uname)-$(uname -m) $i)
+            out=$(./getssl.sh $ip)
+            echo -e "$out"
+            echo -e "$out" >> $output
+            echo >&9
+        }
+    }&
+    n=$(($n+1))
+    if [ $(($n%$(($max_process*2)))) -eq 0 ]
     then
-        ./getssl.sh $n
-    else
-        for((i=0;i<255;i++))
-        do
-            ./getssl.sh ${n}.${i}
-        done
+        wait
     fi
 done
+wait
+exec 9>&-
